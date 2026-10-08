@@ -1,0 +1,28 @@
+name: macOS job filesystem isolation control
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  producer:
+    runs-on: macos-26
+    steps:
+      - name: Write synthetic marker in this job only
+        shell: bash
+        run: |
+          marker="/tmp/bugz-macos-job-${GITHUB_RUN_ID}.txt"
+          printf '%s\n' 'synthetic job-local marker' > "$marker"
+          test -f "$marker"
+  consumer:
+    needs: producer
+    runs-on: macos-26
+    steps:
+      - name: Assert marker is absent in separate job
+        shell: bash
+        run: |
+          marker="/tmp/bugz-macos-job-${GITHUB_RUN_ID}.txt"
+          if test -e "$marker"; then
+            echo "Unexpected marker from another job"
+            exit 1
+          fi
+          echo "Job-local marker is absent"
