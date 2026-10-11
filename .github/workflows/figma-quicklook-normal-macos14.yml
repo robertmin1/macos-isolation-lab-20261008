@@ -33,6 +33,7 @@ jobs:
           cp /Applications/Figma.app/Contents/Resources/app.asar.unpacked/assets/cursor-dropper-ui3.png "$RUNNER_TEMP/input/thumbnail.png"
           (cd "$RUNNER_TEMP/input" && /usr/bin/zip -0 -q normal.fig thumbnail.png)
           /usr/bin/unzip -lv "$RUNNER_TEMP/input/normal.fig"
+          /usr/bin/open -a /Applications/Figma.app
           /usr/bin/qlmanage -m plugins > "$RUNNER_TEMP/ql-plugins.txt"
           grep -i 'figma' "$RUNNER_TEMP/ql-plugins.txt" || true
           /usr/bin/python3 - <<'PY'
