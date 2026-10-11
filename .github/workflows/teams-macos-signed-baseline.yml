@@ -1,0 +1,48 @@
+name: Teams macOS signed-install baseline
+on:
+  push:
+    paths:
+      - .github/workflows/teams-macos-signed-baseline.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  baseline:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - name: Verify production macOS runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          test "$(sw_vers -productVersion)" = '27.0.1'
+          test "$(uname -m)" = 'arm64'
+      - name: Download and verify Microsoft packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mau="$RUNNER_TEMP/Microsoft_AutoUpdate_4.85.pkg"
+          teams="$RUNNER_TEMP/MicrosoftTeams.pkg"
+          curl --fail --location --retry 3 --silent --show-error --output "$mau" 'https://res.public.onecdn.static.microsoft/mro1cdnstorage/C1297A47-86C4-4C1F-97FA-950631F94777/MacAutoupdate/Microsoft_AutoUpdate_4.85.26091737_Updater.pkg'
+          curl --fail --location --retry 3 --silent --show-error --output "$teams" 'https://statics.teams.cdn.office.net/production-osx/enterprise/webview2/lkg/MicrosoftTeams.pkg'
+          printf '%s  %s\n' 'd647aba9538983f0c6cd892d2c3442b71ae1c8573ce53cbf62eb3ea831e9d165' "$mau" | shasum -a 256 --check
+          printf '%s  %s\n' 'bda3a6a8c1085191126058311761069c4274d9a0fbb663038ee25b211ae1046d' "$teams" | shasum -a 256 --check
+          pkgutil --check-signature "$mau" | grep -F 'Developer ID Installer: Microsoft Corporation (UBF8T346G9)'
+          pkgutil --check-signature "$teams" | grep -F 'Developer ID Installer: Microsoft Corporation (UBF8T346G9)'
+      - name: Install and verify current versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo env COMMAND_LINE_INSTALL=1 /usr/sbin/installer -pkg "$RUNNER_TEMP/Microsoft_AutoUpdate_4.85.pkg" -target /
+          sudo env COMMAND_LINE_INSTALL=1 /usr/sbin/installer -pkg "$RUNNER_TEMP/MicrosoftTeams.pkg" -target /
+          app='/Applications/Microsoft Teams.app'
+          mau='/Library/Application Support/Microsoft/MAU2.0/Microsoft AutoUpdate.app'
+          helper='/Library/PrivilegedHelperTools/com.microsoft.autoupdate.helper'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = '26261.303.5165.1465'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$mau/Contents/Info.plist")" = '4.85.26091737'
+          codesign --verify --deep --strict "$app"
+          codesign --verify --strict "$helper"
+          printf 'Teams %s\n' "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
+          printf 'MAU %s\n' "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$mau/Contents/Info.plist")"
+          printf 'Synthetic signed-install baseline passed.\n'
