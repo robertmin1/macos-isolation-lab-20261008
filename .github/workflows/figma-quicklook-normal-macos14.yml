@@ -1,0 +1,57 @@
+name: Figma Quick Look normal thumbnail control
+on:
+  push:
+    paths:
+      - .github/workflows/figma-quicklook-normal-macos14.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  normal-thumbnail:
+    runs-on: macos-14
+    timeout-minutes: 15
+    steps:
+      - name: Install verified current Figma
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          test "$(uname -m)" = arm64
+          zip="$RUNNER_TEMP/Figma.zip"
+          curl --fail --location --retry 3 --silent --show-error --output "$zip" 'https://desktop.figma.com/mac-arm/Figma.zip'
+          printf '%s  %s\n' '93231438dcd361583c6749e9bb451b29f965d7c5df51cacf4806da2e9a94ef31' "$zip" | shasum -a 256 --check
+          ditto -x -k "$zip" "$RUNNER_TEMP/figma"
+          app="$RUNNER_TEMP/figma/Figma.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = 126.10.7
+          codesign --verify --deep --strict "$app"
+          sudo ditto "$app" /Applications/Figma.app
+      - name: Request ordinary PNG and Figma thumbnails
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/input" "$RUNNER_TEMP/png-out" "$RUNNER_TEMP/fig-out"
+          cp /Applications/Figma.app/Contents/Resources/app.asar.unpacked/assets/cursor-dropper-ui3.png "$RUNNER_TEMP/input/thumbnail.png"
+          (cd "$RUNNER_TEMP/input" && /usr/bin/zip -0 -q normal.fig thumbnail.png)
+          /usr/bin/unzip -lv "$RUNNER_TEMP/input/normal.fig"
+          /usr/bin/qlmanage -m plugins > "$RUNNER_TEMP/ql-plugins.txt"
+          grep -i 'figma' "$RUNNER_TEMP/ql-plugins.txt" || true
+          /usr/bin/python3 - <<'PY'
+          import os
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          for label, source, destination in (
+              ('PNG', root / 'input/thumbnail.png', root / 'png-out'),
+              ('FIG', root / 'input/normal.fig', root / 'fig-out'),
+          ):
+              try:
+                  result = subprocess.run(
+                      ['/usr/bin/qlmanage', '-t', '-s', '64', '-o', str(destination), str(source)],
+                      capture_output=True, text=True, timeout=30,
+                  )
+                  print(f'{label} exit={result.returncode} stdout={result.stdout[:1000]!r} stderr={result.stderr[:1000]!r}')
+              except subprocess.TimeoutExpired:
+                  print(f'{label} timeout=30s')
+              print(f'{label} outputs={[p.name for p in destination.iterdir()]}')
+          PY
